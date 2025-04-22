@@ -9,7 +9,7 @@ import ezdxf
 import sys
 import os
 
-sys.path.insert(0,r'C:\Users\thiagop\Desktop\Repositório (Local)\Github\toolkitGIS')
+sys.path.append("toolkitGIS")
 from toolkitGIS import *
 
 pd.options.mode.chained_assignment = None  # default='warn'
@@ -334,4 +334,4 @@ def CreatePatternVerticalRoadSigns(xml_folder_path,sinv_pattern_code_file_path,g
     return gdf
 
 if __name__=="__main__":
-    pass
+    print("Running tests...")
