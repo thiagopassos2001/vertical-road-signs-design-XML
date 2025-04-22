@@ -1,0 +1,26 @@
+<annotation>
+	<folder>232ECE0010S0</folder>
+	<filename>G0084981.JPG</filename>
+	<path>C:\Users\User\Desktop\lvc-sinv-xml\data\image\CE-232\CRESCENTE\232ECE0010S0\G0084981.JPG</path>
+	<source>
+		<database>Unknown</database>
+	</source>
+	<size>
+		<width>3341</width>
+		<height>2923</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>R-19.8</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<bndbox>
+			<xmin>1760</xmin>
+			<ymin>995</ymin>
+			<xmax>2030</xmax>
+			<ymax>1316</ymax>
+		</bndbox>
+	</object>
+</annotation>
