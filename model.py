@@ -237,7 +237,8 @@ def CreateDesignAxis(
         output_dxf_folder_path="data/dxf",
         output_gpkg_folder_path="data/gpkg",
         time_column="DATAHORA",
-        max_length=15):
+        max_length=15,
+        export=True):
 
     gdf = gdf.to_crs(31984)
     gdf = gdf[gdf["SRE"]==sre]
@@ -263,11 +264,40 @@ def CreateDesignAxis(
         max_length=max_length,
         return_type="point")
     
+    if export:
+        ExportGeoDataFrameToDXF(design_axis,dxf_output_file_path)
+        design_axis_segment.to_file(gpkg_output_file_path,driver="GPKG",index=False)
     
-    ExportGeoDataFrameToDXF(design_axis,dxf_output_file_path)
-    design_axis_segment.to_file(gpkg_output_file_path,driver="GPKG",index=False)
+    return design_axis,design_axis_segment
 
-def ExportGeoDataFrameToDXF(gdf,output_file_path):
+def CreateDesignAxisMultiSRE(sre_list,gdf,output_dxf_folder_path,time_column="DATAHORA",):
+
+    gdf = gdf.to_crs(31984)
+    
+    dxf_concat = []
+    for sre in sre_list:
+        print(f"{sre} Processando...")
+        try:
+            design_axis,_ = CreateDesignAxis(
+                sre,
+                gdf,
+                first_point_name=None,
+                time_column=time_column,
+                export=False)
+            
+            design_axis["layer"] = sre
+            dxf_concat.append(design_axis)
+        
+        except Exception as e:
+            print(sre,e)
+        finally:
+            print(f"{sre} Finalizado!")
+    
+    dxf_concat = gpd.GeoDataFrame(pd.concat(dxf_concat),geometry="geometry",crs="EPSG:31984")
+
+    ExportGeoDataFrameToDXF(dxf_concat,output_dxf_folder_path,set_layer=True)
+
+def ExportGeoDataFrameToDXF(gdf,output_file_path,set_layer=False):
     # Criar novo DXF
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
@@ -278,13 +308,22 @@ def ExportGeoDataFrameToDXF(gdf,output_file_path):
         # Converter para coordenadas locais (ajuste conforme necessário)
         if geometry.geom_type == "Point":
             x, y = geometry.x, geometry.y
-            msp.add_point((x, y))
+            if set_layer:
+                msp.add_point((x, y),dxfattribs={"layer": row["layer"]})
+            else:
+                msp.add_point((x, y))
         elif geometry.geom_type == "LineString":
             points = list(geometry.coords)
-            msp.add_lwpolyline(points)
+            if set_layer:
+                msp.add_lwpolyline(points,dxfattribs={"layer": row["layer"]})
+            else:
+                msp.add_lwpolyline(points)
         elif geometry.geom_type == "Polygon":
             exterior = list(geometry.exterior.coords)
-            msp.add_lwpolyline(exterior, close=True)
+            if set_layer:
+                msp.add_lwpolyline(exterior, close=True,dxfattribs={"layer": row["layer"]})
+            else:
+                msp.add_lwpolyline(exterior, close=True)
 
     # Salvar o arquivo DXF
     doc.saveas(output_file_path)     
