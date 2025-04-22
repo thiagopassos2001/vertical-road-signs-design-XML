@@ -1,14 +1,16 @@
 import xml.etree.ElementTree as ET
-import shapely.ops
 from thefuzz import fuzz,process
-from toolkitGIS import *
 import geopandas as gpd
 import pandas as pd
 import numpy as np
 import shapely
 import timeit
 import ezdxf
+import sys
 import os
+
+sys.path.insert(0,r'C:\Users\thiagop\Desktop\Repositório (Local)\Github\toolkitGIS')
+from toolkitGIS import *
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
