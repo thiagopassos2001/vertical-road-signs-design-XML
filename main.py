@@ -1,4 +1,4 @@
-from model import *     
+from model import *
 
 if __name__=="__main__":
     start_timer = timeit.default_timer()
