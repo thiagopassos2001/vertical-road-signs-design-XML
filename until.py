@@ -276,6 +276,32 @@ def SplitLineStringByMaxLengthRandom(
     
     return list_segments
 
+def ExpandSegmentToGeoDataFrame(
+        gdf,
+        max_length=20.0,
+        random=False,
+        mean=0,
+        max_diff=1):
+    
+    new_gdf = []
+    for index,row in gdf.iterrows():
+        list_segments = SplitLineStringByMaxLengthRandom(
+            row["geometry"],
+            max_length=max_length,
+            random=random,
+            mean=mean,
+            max_diff=max_diff)
+
+        for segment in list_segments:
+            new_row = row.copy()
+            new_row["geometry"] = segment
+            new_gdf.append(new_row)
+    
+    new_gdf = gpd.GeoDataFrame(new_gdf,columns=gdf.columns,crs=gdf.crs)
+    
+    return new_gdf
+
+
 if __name__=="__main__":
     pass
                 

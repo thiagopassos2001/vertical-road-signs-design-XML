@@ -372,5 +372,157 @@ def CreatePatternVerticalRoadSigns(xml_folder_path,sinv_pattern_code_file_path,g
     
     return gdf
 
+def CreateAxisFromGeoDataFrame(
+        gdf,
+        closest_point=None,
+        start_meter_value=0,
+        max_length=20,
+        random=False,
+        mean=0,
+        max_diff=1,
+        time_column=None,   # "Timestamp" to .gpkg from ImportPhotos QGIS
+        return_type="line",
+        tolerance=0.5,):
+    """
+    Recebe o .gpkg tratado, gerado de diversas fontes, 
+    como a extensão "ImportPhotos" do QGIS
+
+    Retorna um geodataframe de pontos ou linhas
+    "line" para a linha completa
+    "point" para o ponto final da linha
+    """
+    crs_gdf = gdf.crs
+
+    valid_return_option = ["line","point"]
+    if return_type not in valid_return_option:
+        return ValueError(f"'{return_type}' inválido! Escolha entre {valid_return_option}")
+    
+    if not gdf.geom_type.unique()[0]!=shapely.Point:
+        raise ValueError(f"Tipo de geometria {gdf.geom_type.unique()[0]} não compatível!")
+    
+    # Ordena os pontos para cria um eixo 
+    gdf_sorted = SortPointsBySpaceTime(
+        gdf,
+        closest_point=closest_point,
+        time_column=time_column,
+        sort_column="ORDEM",
+        distance_to_next_point_column="DISTANCIA"
+        )
+    
+    # Cria um eixo com os pontos de campo e simplifica a geometria um pouco
+    axis_line_string = shapely.LineString(gdf_sorted["geometry"].apply(lambda value:list(value.coords)[0]).tolist())
+    if tolerance>0:
+        axis_line_string = axis_line_string.simplify(tolerance=tolerance,preserve_topology=True)
+    gdf_line_string = gpd.GeoDataFrame(geometry=[axis_line_string],crs=crs_gdf)
+    gdf_line_string["COMPRIMENTO"] = gdf_line_string.length.astype("float64")
+
+    # Quebra o eixo em segmentos se reta e organiza um geodataframe
+    list_segments = SplitLineStringByMaxLengthRandom(
+        axis_line_string,
+        max_length=max_length,
+        random=random,
+        mean=mean,
+        max_diff=max_diff)
+    
+    gdf_segment = gpd.GeoDataFrame(geometry=list_segments,crs=crs_gdf)
+    # Calcula o KM acumulado do segmento
+    gdf_segment["COMPRIMENTO"] = gdf_segment.length.astype("float64")
+    gdf_segment["KM"] = start_meter_value + gdf_segment["COMPRIMENTO"].cumsum()/1000
+    gdf_segment["KM"] = gdf_segment["KM"].round(3).astype("float64")
+
+    # Se o formato de saída for ponto
+    if return_type=="point":
+        first_row = gpd.GeoDataFrame(
+            {"COMPRIMENTO":[0],
+             "KM":[0]},
+            geometry=gdf_segment.iloc[0:1]["geometry"].apply(lambda value:shapely.Point(value.coords[0])),
+            crs=crs_gdf)
+        gdf_segment["geometry"] = gdf_segment["geometry"].apply(lambda value:shapely.Point(value.coords[-1]))
+
+        gdf_segment = gpd.GeoDataFrame(pd.concat([first_row,gdf_segment],ignore_index=True),geometry="geometry",crs=crs_gdf)
+
+    return gdf_line_string,gdf_segment
+
+def ExpandLineStringToPoint(gdf,drop_duplicates=True):
+
+    new_gdf = []
+
+    for index, row in gdf.iterrows():
+        list_segments = list(row["geometry"].coords)
+        
+        for segment in list_segments:
+            new_row = row.copy()
+            new_row["geometry"] = shapely.Point(segment)
+            new_gdf.append(new_row)
+    
+    new_gdf = gpd.GeoDataFrame(new_gdf,columns=gdf.columns,crs=gdf.crs)
+
+    if drop_duplicates:
+        new_gdf = new_gdf.drop_duplicates(subset="geometry")
+
+    return new_gdf
+
+def CheckAccessSide(point,left,right):
+    if shapely.distance(point,right)<shapely.distance(point,left):
+        return 1
+    else:
+        return -1
+
+def DecimalToStake(value):
+    km,meter = str(float(value)).split(".")
+
+    n = 3 - len(meter)
+    if n>0:
+        meter = meter + "0"*n
+    meter = meter[:3]
+    
+    return km+"+"+meter
+
 if __name__=="__main__":
-    print("Running tests...")
+    if False:    
+        CRS = "EPSG:31984"
+        dxf_file_path = r"\\192.168.0.5\tecnico1\TRABALHOS\ANDAMENTO\2025-CE-EST-DET-EPROS\3. PRODUTOS\2025 - 72 - Projeto Trechos Críticos (PSV)\03. DADOS\M1-S01-CE-350-1\PRIMÁRIOS\XML\Eixo.dxf"
+        root_XML = r"\\192.168.0.5\tecnico1\TRABALHOS\ANDAMENTO\2025-CE-EST-DET-EPROS\3. PRODUTOS\2025 - 72 - Projeto Trechos Críticos (PSV)\03. DADOS\M1-S01-CE-350-1\PRIMÁRIOS\XML\CE-350\PLACAS"
+        photo_file_path = 'data/image/gpkg/M01-S01-CE-350-1-SEP-FOTO.gpkg'
+        default_offset = 5.8
+        
+        dxf = gpd.read_file(dxf_file_path)
+        dxf.crs = CRS
+
+        dxf_axis = dxf[dxf["Layer"]=="Eixo_Crescente"]
+        dxf_curb = dxf[dxf["Layer"]=="Meio_Fio"]
+
+        axis_unique,dxf_axis = CreateAxisFromGeoDataFrame(
+            ExpandLineStringToPoint(dxf_axis),
+            closest_point=shapely.Point([555055.938,9551195.802]),
+            max_length=10)
+        dxf_axis["KM ESTACA"] = dxf_axis["KM"].apply(DecimalToStake)
+
+        axis_unique_left = axis_unique["geometry"].iloc[0].parallel_offset(1,"left")
+        axis_unique_right = axis_unique["geometry"].iloc[0].parallel_offset(1,"right")
+
+        # Dados dos XMLs
+        xml = pd.DataFrame()
+        for i in [os.path.join(dirpath,f) for (dirpath, dirnames, filenames) in os.walk(root_XML) for f in filenames]:
+            df_ = XMLtoDatFrame(i)
+            xml = pd.concat([xml,df_],ignore_index=True)
+
+        xml['name'] = xml['name'].str.strip()
+
+        pattern_classes = {
+            'UNICA':['Unicas','unicas','únicas','Únicas','unica'],
+            }
+        
+        for key, value in pattern_classes.items():
+            xml.loc[xml['name'].str.lower().isin(value),'name'] = key
+        
+        photo = gpd.read_file(photo_file_path).to_crs(CRS).rename(columns={"Name":"filename"})
+        xml = pd.merge(xml,photo,on="filename",how="left")
+        xml = gpd.GeoDataFrame(xml,geometry="geometry",crs=CRS)
+
+        xml = xml.sjoin_nearest(dxf_axis,how="left")
+
+        xml["OFFSET"] = xml["folder"].apply(lambda x:default_offset if x =="CRESCENTE" else -default_offset)
+        xml["OFFSET"] = xml.apply(lambda x:x["OFFSET"] if x["folder"]!="ACESSO" else default_offset*CheckAccessSide(x["geometry"],axis_unique_left,axis_unique_right),axis=1)
+
+        xml.to_csv("PLANILHA-CE-350.csv",index=False)
